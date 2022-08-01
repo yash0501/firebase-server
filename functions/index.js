@@ -12,60 +12,92 @@ const {
   validateSignature,
   buf2hex,
 } = require("@taquito/utils");
-const { TezosToolkit } = require("@taquito/taquito");
+const { TezosToolkit, RpcPacker } = require("@taquito/taquito");
 
 const signer = new InMemorySigner(
   "edskRneBSS17e9BX3tMf7PbdcmDwuPJJAcpGYz3F1NvUVvzJYpWHBBdACiW4hR1U5PQSFAxjFbjED5njLoRkqYxjL5hhFa1o9n"
 );
 
-admin.initializeApp();
+const serviceAccount = require("../serviceAccountKey.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://tantest-35456-default-rtdb.firebaseio.com",
+});
+
+const db = admin.database();
+
 app.use(cors({ origin: true }));
 
 app.get("/", (req, res) => {
   res.send("Hello World Firebase");
 });
 
-app.post("/post", (req, res) => {
-  const data = req.body;
-  res.status(200).json({
-    message: "Data received",
-    data: data,
-  });
-});
-
 app.post("/create_sign", async (req, res) => {
-  const { address, amount, token_id } = req.body;
+  const { userid, address, amount, token_id } = req.body;
   const param_str = `${address}|${amount}|${token_id}`;
   console.log(param_str);
-  // string to bytes
-  const bytes = char2Bytes(param_str);
-  // buffer to bytes
-  const bufbytes = buf2hex(Buffer(param_str, "utf8"));
-  console.log(bufbytes);
+  const tezos = new TezosToolkit("https://ghostnet.smartpy.io");
+  const formatted_bytes = await tezos.rpc.packData({
+    data: { string: param_str },
+    type: { prim: "string" },
+  });
 
-  console.log(bytes);
+  console.log(formatted_bytes.packed);
+  const bytes = formatted_bytes.packed;
+
   const signature = await signer.sign(bytes);
   const pk = await signer.publicKey();
   console.log(pk);
   console.log(signature);
-  // verify signature
 
-  const isValid = await verifySignature(bytes, pk, signature.sig);
+  // await admin.database
+  const userRef = db.ref("users/");
+  const newUserRef = userRef.push();
+  newUserRef
+    .set({
+      userid: userid,
+      address: address,
+      signature: signature,
+      amount: amount,
+      token_id: token_id,
+    })
+    .then((result) => {
+      console.log(result);
+      res.status(200).json({
+        message: "Signature created",
+        signature: signature,
+        result: result,
+      });
+    })
+    .catch((error) => {
+      console.log(error);
+      res.status(500).json({
+        message: "Error creating signature",
+        error: error,
+      });
+    });
+});
 
-  console.log(isValid);
-
-  res.status(200).json({
-    message: "Signature created",
-    signature: signature,
-  });
+app.get("/get_sign", async (req, res) => {
+  const { userid } = req.query;
+  const userRef = db.ref("users/" + userid);
+  userRef
+    .once("value", (snapshot) => {
+      const user = snapshot.val();
+      console.log(user);
+      res.status(200).json({
+        message: "Signature retrieved",
+        user: user,
+      });
+    })
+    .catch((error) => {
+      console.log(error);
+      res.status(500).json({
+        message: "Error retrieving signature",
+        error: error,
+      });
+    });
 });
 
 exports.widgets = functions.https.onRequest(app);
-
-// // Create and Deploy Your First Cloud Functions
-// // https://firebase.google.com/docs/functions/write-firebase-functions
-//
-// exports.helloWorld = functions.https.onRequest((request, response) => {
-//   functions.logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
