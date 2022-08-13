@@ -35,7 +35,7 @@ app.get("/", (req, res) => {
 
 app.post("/create_sign", async (req, res) => {
   const { userid, address, amount, token_id } = req.body;
-  const param_str = `${address}|${amount}|${token_id}`;
+  const param_str = `${address}|${amount}`;
   console.log(param_str);
   const tezos = new TezosToolkit("https://ghostnet.smartpy.io");
   const formatted_bytes = await tezos.rpc.packData({
