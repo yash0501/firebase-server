@@ -13,8 +13,14 @@ const {
   buf2hex,
 } = require("@taquito/utils");
 const { TezosToolkit, RpcPacker } = require("@taquito/taquito");
+const {
+  Parser,
+  packDataBytes,
+  MichelsonData,
+  MichelsonType,
+} = require("@taquito/michel-codec");
 
-const signer = new InMemorySigner(
+const Signer = new InMemorySigner(
   "edskRneBSS17e9BX3tMf7PbdcmDwuPJJAcpGYz3F1NvUVvzJYpWHBBdACiW4hR1U5PQSFAxjFbjED5njLoRkqYxjL5hhFa1o9n"
 );
 
@@ -23,6 +29,10 @@ const serviceAccount = require("../serviceAccountKey.json");
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://tantest-35456-default-rtdb.firebaseio.com",
+});
+
+const tezos = new TezosToolkit("https://ithacanet.smartpy.io/").setProvider({
+  signer: Signer,
 });
 
 const db = admin.database();
@@ -35,23 +45,25 @@ app.get("/", (req, res) => {
 
 app.post("/create_sign", async (req, res) => {
   const { userid, address, amount, token_id } = req.body;
-  const param_str = `${address}|${amount}`;
-  console.log(param_str);
-  const tezos = new TezosToolkit("https://ghostnet.smartpy.io");
-  const formatted_bytes = await tezos.rpc.packData({
-    data: { string: param_str },
-    type: { prim: "string" },
-  });
 
-  console.log(formatted_bytes.packed);
-  const bytes = formatted_bytes.packed;
+  const data = `(Pair (Pair "${address}" ${amount}) ${token_id})`;
+  const type = `(pair (pair (address) (nat)) (nat))`;
 
-  const signature = await signer.sign(bytes);
-  const pk = await signer.publicKey();
-  console.log(pk);
+  const p = new Parser();
+  const dataJSON = p.parseMichelineExpression(data);
+  const typeJSON = p.parseMichelineExpression(type);
+
+  const packed = packDataBytes(dataJSON, typeJSON);
+  console.log(packed);
+
+  const signature = await Signer.sign(packed.bytes);
   console.log(signature);
 
-  // await admin.database
+  // res.status(200).json({
+  //   message: "Signature created",
+  //   signature: signature,
+  // });
+
   const userRef = db.ref("users/");
   const newUserRef = userRef.push();
   newUserRef
